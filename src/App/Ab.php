@@ -88,18 +88,19 @@ class Ab
                     'goal' => $event->goal,
                 ]);
 
-                $event = Events::firstOrCreate([
-                    'instance_id' => self::$session->id,
-                    'name' => $event->name,
-                    'value' => $event->fired,
-                ]);
-
-                $experiment->events()->save($event);
-                self::$session->events()->save($event);
+                if($event->fired != null) {
+                    $event = Events::firstOrCreate([
+                        'instance_id' => self::$session->id,
+                        'name'        => $event->name,
+                        'value'       => $event->fired,
+                    ]);
+                    $experiment->events()->save($event);
+                    self::$session->events()->save($event);
+                }
             }
         }
 
-        return  Session::get(config('laravel-ab.cache_key'));
+        return Session::get(config('laravel-ab.cache_key'));
     }
 
     /**
@@ -129,34 +130,75 @@ class Ab
         $this->goal = $goal;
 
         ob_end_clean();
-
+    
+        $totalWeight = 0;
+        $totalHits = 0;
         $conditions = [];
         foreach ($this->conditions as $key => $condition) {
             if (preg_match('/\[(\d+)\]/', $key, $matches)) {
-                foreach (range(1, $matches[1]) as $index) {
-                    $conditions[] = $key;
-                }
+                $conditions[$key]['weight'] = $matches[1];
+            } else {
+                $conditions[$key]['weight'] = 1;
             }
+            $conditions[$key]['hits'] = $this->getHits($key);
+        
+            $totalWeight += $conditions[$key]['weight'];
+            $totalHits += $conditions[$key]['hits'];
         }
-        if (empty($conditions)) {
-            $conditions = array_keys($this->conditions);
-        }
-        /// has the user fired this particular experiment yet?
+
+        // has the user fired this particular experiment yet?
         if ($fired = $this->hasExperiment($this->name)) {
             $this->fired = $fired;
         } else {
-            shuffle($conditions);
-            $this->fired = current($conditions);
+            $this->fired = $this->getConditionToShow($totalHits, $totalWeight, $conditions);
         }
-
+    
         return $this->conditions[$this->fired];
+    }
+    
+    /**
+     * @param string $key
+     *
+     * @return int
+     */
+    private function getHits($key)
+    {
+        $experiment = Experiments::where('experiment', $this->name)
+            ->with('events')
+            ->first();
+    
+        return ($experiment) != null ? $experiment->events->where('value', $key)->count() : 0;
+    }
+    
+    /**
+     * @param int $totalHits
+     * @param int $totalWeight
+     * @param array $conditions
+     *
+     * @return string
+     */
+    private function getConditionToShow($totalHits, $totalWeight, $conditions)
+    {
+        $diff_per_condition = [];
+        foreach($conditions as $key => $condition) {
+            $condition_percentage = $condition['weight'] / $totalWeight * 100;
+            $condition_hits_ideal = $totalHits / 100 * $condition_percentage;
+            
+            $diff_per_condition[$key] = $condition_hits_ideal - $condition['hits'];
+        }
+    
+        natsort($diff_per_condition);
+    
+        return array_keys(array_reverse($diff_per_condition))[0];
     }
 
     /**
-     * @param $goal
-     * @param goal $value
-     *
      * Insert a simple goal tracker to know if user has reach a milestone
+     *
+     * @param $goal
+     * @param $value
+     *
+     * @return \ComoCode\LaravelAb\App\Goal
      */
     public function goal($goal, $value = null)
     {
@@ -190,8 +232,6 @@ class Ab
     }
 
     /**
-     * @param bool $forceSession
-     *
      * @return mixed
      *
      * Ensuring a user session string on any call for a key to be used.
@@ -213,9 +253,6 @@ class Ab
     }
 
     /**
-     * @param $experiment
-     * @param $condition
-     *
      * Tracks at an instance level which event was selected for the session
      */
     public function instanceEvent()
@@ -266,3 +303,4 @@ class Ab
         self::$session = false;
     }
 }
+
