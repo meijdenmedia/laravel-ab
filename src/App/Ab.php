@@ -60,22 +60,7 @@ class Ab
             ]);
         }
     }
-
-    /**
-     * @param array $session_variables
-     *                                 Load initial session variables to store or track
-     *                                 Such as variables you want to track being passed into the template.
-     */
-    public function setup(array $session_varfiables = array())
-    {
-        foreach ($session_variables as $key => $value) {
-            $experiment = new self();
-            $experiment->experiment($key);
-            $experiment->fired = $value;
-            $experiment->instanceEvent();
-        }
-    }
-
+    
     /**
      * When the view is rendered, this funciton saves all event->firing pairing to storage.
      */
