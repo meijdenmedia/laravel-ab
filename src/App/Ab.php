@@ -149,10 +149,12 @@ class Ab
     private function getHits($key)
     {
         $experiment = Experiments::where('experiment', $this->name)
-            ->with('events')
+            ->with(['events' => function($q) use ($key) {
+                $q->where('value', $key);
+            }])
             ->first();
-    
-        return ($experiment) != null ? $experiment->events->where('value', $key)->count() : 0;
+        
+        return ($experiment) != null ? $experiment->events->count() : 0;
     }
     
     /**
