@@ -49,7 +49,11 @@ class Ab
         if (!Session::has(config('laravel-ab.cache_key')) || $forceSession) {
             $uid = md5(uniqid().$this->request->getClientIp());
             $laravel_ab_id = $this->request->cookie(config('laravel-ab.cache_key'), $uid);
-            Session::set(config('laravel-ab.cache_key'), $uid);
+            if(version_compare(App()->version(), '5.4.0', '>=')) {
+                Session::put(config('laravel-ab.cache_key'), $uid);
+            } else {
+                Session::set(config('laravel-ab.cache_key'), $uid);
+            }
         }
 
         if (empty(self::$session)) {
@@ -60,7 +64,22 @@ class Ab
             ]);
         }
     }
-    
+
+    /**
+     * @param array $session_variables
+     *                                 Load initial session variables to store or track
+     *                                 Such as variables you want to track being passed into the template.
+     */
+    public function setup(array $session_variables = array())
+    {
+        foreach ($session_variables as $key => $value) {
+            $experiment = new self();
+            $experiment->experiment($key);
+            $experiment->fired = $value;
+            $experiment->instanceEvent();
+        }
+    }
+
     /**
      * When the view is rendered, this funciton saves all event->firing pairing to storage.
      */
